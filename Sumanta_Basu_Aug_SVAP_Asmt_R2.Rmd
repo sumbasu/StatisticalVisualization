@@ -1,0 +1,357 @@
+---
+title: Analysis of Data for the Agency for Healthcare Research and Quality Inpatient Mortality Indicators for
+  California Hospitals, over the period 2012-2015
+author: "Sumanta Basu"
+date: "10/2/2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rvest)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+install.packages('ggmap',repos="http://ftp.iitm.ac.in/cran")
+
+library(ggmap)
+```
+
+#Frame
+
+##What was year-wise death toll. Is there any trend (ascending) or (descending) in year-wise death count
+##Which county recorded maximum death
+##Which hospital recorded maxximum contribution to death toll.
+##Which procedurer are proved to be least successful in the hospital contributed to maximum death toll.
+
+#Acquire
+
+
+
+Getting data from following link:
+
+https://data.chhs.ca.gov/dataset/05fee607-cea9-4bf1-8b53-20ca584748a3/resource/5012b03a-fc44-4709-a060-1fb448947377/download/california-hospital-inpatient-mortality-rates-and-quality-ratings.csv
+
+Dataset was downloaded as a CSV file prior to the analysis.
+
+
+```{r}
+
+
+getwd()
+mydata1=read.csv("calHosInpMortality.csv", header =TRUE)
+
+names(mydata1)
+
+attach(mydata1)
+str(mydata1)
+
+```
+## Refine
+
+```{r}
+## Modify column names for easier operation.
+column_names <- c('year','county','hospitalName','hospitalId','procedureName','riskRate','numDeath','numCases','hospRating','long','lat')
+colnames(mydata1) <- column_names
+tail(mydata1,1)
+
+unique(mydata1$county)
+
+str(mydata1)
+dim(mydata1)
+dim(mydata1 %>% filter(is.na(county)))
+
+mydata1$county <- as.character(mydata1$county) 
+mydata1$hospitalName <- as.character(mydata1$hospitalName)
+mydata1$hospitalId <- as.character(mydata1$hospitalId)
+mydata1$procedureName <- as.character(mydata1$procedureName)
+mydata1$riskRate <- as.numeric(mydata1$riskRate)
+mydata1$numDeath <- as.numeric(mydata1$numDeath)
+mydata1$numCases <- as.numeric(mydata1$numCases)
+mydata1$hospRating <- as.character(mydata1$hospRating)
+mydata1$long <- as.numeric(mydata1$long)
+mydata1$lat <- as.numeric(mydata1$lat)
+
+str(mydata1)
+
+unique(mydata1$hospRating)
+
+## Let's perform NA analysis
+dim(mydata1 %>% filter(is.na(county)))
+dim(mydata1 %>% filter(is.na(hospitalName)))
+dim(mydata1 %>% filter(is.na(hospitalId)))
+dim(mydata1 %>% filter(is.na(procedureName)))
+dim(mydata1 %>% filter(is.na(riskRate)))
+dim(mydata1 %>% filter(is.na(numDeath)))
+dim(mydata1 %>% filter(is.na(numCases)))
+dim(mydata1 %>% filter(is.na(hospRating)))
+dim(mydata1 %>% filter(is.na(long)))
+dim(mydata1 %>% filter(is.na(lat)))
+
+## It is evident from the above excersise that there are 68 records for which hospital id is NULL.
+
+## Let's find out the details about those record where hospital ID is NULL.
+
+dNullID <- mydata1 %>% filter(is.na(hospitalId))
+
+
+## it is observed all 68 records belongs to hospital "STATEWIDE", It is also observed that this hospital
+## belongs to AAAA county. Let's assign a hospitalID (OSPDID)
+
+## retrieve county code from all the OSPDID, to find the pattern of county code. As per the data dictionary, "OSPDID" is a unique number established by the Office of Statewide Health Planning and Development (OSHPD) for identifying facilities and used in the Licensed Facility Information System (LFIS). The first 3 numbers identify the type of facility, the next two represent the county number, and the last five are randomly assigned wihin each county.
+
+unique(substr(mydata1$hospitalId,4,5))
+
+## it is clear that range of county code starts from 01, ends at 58. So, we can assign country code as 00 to this county. Also We noticed that first 3 digit is always 106. Hence our derived hospital id for this particular hospital "STATEWIDE" is 1060012345.
+
+##
+```
+## TRANSFORM
+
+```{r}
+mydata1 <- mydata1 %>% 
+  mutate (hospitalId = ifelse(hospitalName == "STATEWIDE", "1060012345", hospitalId))
+
+
+str(mydata1)
+
+## We can see now county code is added for "AAAA" county as well.
+unique(substr(mydata1$hospitalId,4,5))
+## Year-wise number of death
+
+dfYearDeath <- mydata1 %>%
+  select(year,numDeath) %>%
+  group_by(year) %>%
+  dplyr::summarise(TotalYearDeath = sum(numDeath)) %>%
+  arrange(desc(TotalYearDeath))
+
+## Show countywise death.
+
+dfCounty <- mydata1 %>%
+  select(county,numDeath) %>%
+  group_by(county) %>%
+  dplyr::summarise(TotalCountyDeath = sum(numDeath)) %>%
+  arrange(desc(TotalCountyDeath)) 
+
+```
+
+## EXPLORE
+
+```{r}
+## plot county-wise death.
+ggplot(dfCounty)+ aes(reorder(county,TotalCountyDeath), TotalCountyDeath, fill = county )+
+            geom_col(width = 1) +
+          coord_flip()
+## It is evident that, overall, "Los Angeles" county is maximum contributor to the death toll.
+
+
+## plot year-wise death.
+
+ggplot(dfYearDeath) + aes(year, TotalYearDeath) + geom_line()
+
+## from the plot, it is evident that , maximum number of death occured in year 2014
+
+
+
+## Show county wise death toll for the year 2014
+df2014 <- mydata1 %>% filter(year==2014)
+
+dfCountyDeath <- df2014 %>%
+  select(county,numDeath) %>%
+  group_by(county) %>%
+  dplyr::summarise(TotalCountyDeath = sum(numDeath)) %>%
+  arrange(desc(TotalCountyDeath))
+
+## plot county-wise death for 2014.
+ggplot(dfCountyDeath)+ aes(reorder(county,TotalCountyDeath), TotalCountyDeath, fill = county )+
+            geom_col(width = 1) +
+          coord_flip()
+
+## It is evident that for year 2014 also, "Los Angeles" county is maximum contributor to the death toll.
+
+
+## Show the county wise highest death toll
+df2014_deathTollMax <- df2014 %>% group_by(county) %>% dplyr::summarise(numDeath=max(numDeath))
+
+ggplot(df2014_deathTollMax)+
+aes(reorder(county,numDeath),weight=numDeath)+
+geom_bar() +
+coord_flip()
+
+## Hospital-wise number of death for Los Angeles county
+
+dfHospDeath <- mydata1 %>%
+  filter(county=="Los Angeles")%>%
+  select(hospitalName,numDeath) %>%
+  group_by(hospitalName) %>%
+  dplyr::summarise(TotalHospDeath = sum(numDeath)) %>%
+  arrange(desc(TotalHospDeath))
+
+## Plot the graph
+  ggplot(dfHospDeath)+
+  aes(reorder(hospitalName,TotalHospDeath),weight=TotalHospDeath)+
+  geom_bar() +
+  coord_flip()
+
+  
+  ## Lakewood Regional Medical Center, which belongs to Los Angeles county, is leading the list of death toll.
+  ## findout the procedure impacting maximum.
+  
+  dfLR <- mydata1 %>%
+    filter(hospitalName == "Lakewood Regional Medical Center")%>%
+    select(procedureName,numCases,numDeath) %>%
+    group_by(procedureName) %>%
+    dplyr::summarise(procCases = sum(numCases),procDeath=sum(numDeath))
+  
+    
+  
+  ## How many patients are alive against each of the procedure
+  
+  dfLR$alive <- (dfLR$procCases - dfLR$procDeath)
+
+  ## Remove negative entires, number of cases cannot be less that number of death,hence those are bad data hence removed.
+  
+  dfLR <- dfLR %>%
+    filter(alive >= 0)
+  
+  ## find successrate against each procedure
+  
+  dfLR$percentSuccess <- round((dfLR$alive/dfLR$procCases)*100,digits=2)
+  dfLR$percentFailure <- round(100.00-dfLR$percentSuccess,digits=2)
+  
+  ## Plot the procedures showing least successful in this hospital
+  ggplot(dfLR)+
+aes(reorder(procedureName,percentFailure),weight=percentFailure)+
+geom_bar() +
+coord_flip()
+  
+  ## The diagram shows that this hospital has least success rate against Pancreatic Resection, Pancreatic Cancer, Espophageal Resection and other Pancreatic procedures.
+  
+  ## Plot the procedure causing maximum inpatient death over the whole period 2012-2015
+  
+  dfprocWise <- mydata1 %>% 
+    # filter(year == 2014) %>%
+     group_by(procedureName) %>%
+     dplyr::summarise(InpatientDeathCount = sum(numDeath)) %>%
+     arrange(desc(InpatientDeathCount))
+   
+   ggplot(dfprocWise)+ aes(reorder(procedureName,InpatientDeathCount), InpatientDeathCount, fill = procedureName )+
+            geom_col(width = 1) +
+          coord_flip()
+   
+   
+   ## Plot the procedure causing maximum inpatient death in 2014
+  
+  dfprocWise2014 <- mydata1 %>% 
+     filter(year == 2014) %>%
+     group_by(procedureName) %>%
+     dplyr::summarise(InpatientDeathCount = sum(numDeath)) %>%
+     arrange(desc(InpatientDeathCount))
+   
+   ggplot(dfprocWise2014)+ aes(reorder(procedureName,InpatientDeathCount), InpatientDeathCount, fill = procedureName )+
+            geom_col(width = 1) +
+          coord_flip()
+   
+#Let's plot the hospitals as per their coordinates, yearwise. It shows a good overlap with very few outliners on 2012.
+   
+ggplot() + geom_point(data=mydata1,aes(x=long,y=lat,color=year))   
+```
+# MODEL
+
+### Preprocessing to get the tidy dataframe
+
+```{r}
+options(repr.plot.width=10, repr.plot.height=6)
+
+str(mydata1)
+
+
+## How the risk rate and percentage failure to avoid death are related to each other.
+   
+   unique(mydata1$procedureName)
+   mydata <- mydata1
+   mydata1$procedureName <- as.factor(mydata1$procedureName)
+   
+   
+   
+   mydata1$alive <- (mydata1$numCases - mydata1$numDeath)
+   
+## Remove negative entires, number of cases cannot be less that number of death,hence those are bad data hence removed.
+   mydata1<- mydata1 %>%
+    filter(alive >= 0)
+   
+   mydata1$percentSuccess <- round((mydata1$alive/mydata1$numCases)*100,digits=2)
+  mydata1$percentFailure <- round(100.00-mydata1$percentSuccess,digits=2)
+  
+  
+  ggplot(mydata1) + aes(percentFailure,riskRate) + geom_point()
+  
+  cor(mydata1$percentFailure, mydata1$riskRate)
+  cor(log(mydata1$percentFailure),log(mydata1$riskRate))
+  
+   ## PRINCIPLE: Visualizing linear relationships
+  #We can try and fit a linear line to the data to see if there is a relationship
+ggplot(mydata1) + aes( riskRate ,percentFailure)+ geom_point() + stat_smooth(method = 'lm')
+
+
+
+# Get the value for Los Angeles,  as LA is the highest contributor to death number.
+
+dfLA <- mydata1 %>%
+          filter( county == "Los Angeles")
+          #filter( year == 2014) %>%
+          #arrange(year)
+
+dfLAMutate <- dfLA %>%
+          mutate(riskRateLog = log(riskRate))
+  
+ggplot(dfLAMutate) + aes(riskRate) + geom_histogram(bins  = 30)
+ggplot(dfLAMutate) + aes(riskRateLog) + geom_histogram(bins  = 30)
+
+
+
+dfLAMutate <- dfLAMutate %>%
+          mutate(riskRateLogLag = lag(riskRateLog)) %>%
+          mutate(riskRateLogDiff = riskRateLog - lag(riskRateLogLag) )
+
+# We can see that they are slightghly correlated
+cor(dfLAMutate$riskRateLog, dfLAMutate$riskRateLogLag, use = 'complete')
+ggplot(dfLAMutate) + aes(riskRateLog, riskRateLogLag) + geom_point() 
+
+summary(dfLA$riskRate)
+  summary(dfLA$percentSuccess)
+  
+  
+  cor(dfLA$riskRate, dfLA$percentSuccess)
+   cor(log(dfLA$riskRate), log(dfLA$numDeath))
+   ## It is observed thatRiskRate and number of Death at Los Angeles county are well corelated.
+   ggplot(dfLA) + aes(log(riskRate), log(numDeath)) + geom_point()
+   
+   ## It is observed that log of number of death increases with log of Risrate of the procedure.
+   
+   ggplot(dfLA) + aes(log(riskRate), log(numDeath)) + geom_point()+ stat_smooth(method = 'lm')
+   
+   ## Try to find relation between hospital coordinates
+   cor(mydata1$long,mydata1$lat)
+   
+   ## Seems to be very well co-related. Plot them as geom points
+   ggplot(mydata1) + aes(long, lat) + geom_point()
+   
+   ## Try to find linear regression and fit a line among points
+   ggplot(mydata1) + aes( long ,lat)+ geom_point() + stat_smooth(method = 'lm')
+
+   
+```
+
+## COMMUNICATE
+
+```{r}
+#It is observed that Year 2014 recorded highest number of deaths. Also, Los Angeles county recorded maximum number of inpatient deaths throughout the period. At the same time it is observed that with increased rate of risk, number of deaths inceased.
+
+
+```
